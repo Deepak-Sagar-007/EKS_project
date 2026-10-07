@@ -22,7 +22,7 @@ managedNodeGroups:
         - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
         - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
         - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
-        - arn:aws:iam::aws:policy/AmazonEBSCSIDriverPolicy   # lets EBS CSI create volumes for Postgres
+        - arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy   # lets EBS CSI create volumes for Postgres
 
 addons:
   - name: aws-ebs-csi-driver
