@@ -1,0 +1,45 @@
+name: 1 - EKS Cluster (create / destroy)
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "create or destroy"
+        required: true
+        type: choice
+        options: [create, destroy]
+
+env:
+  AWS_REGION: ap-south-1
+
+jobs:
+  cluster:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install eksctl
+        run: |
+          curl -sL "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_Linux_amd64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/eksctl /usr/local/bin/eksctl
+          eksctl version
+
+      - name: Create cluster
+        if: inputs.action == 'create'
+        run: eksctl create cluster -f infra/cluster.yaml
+
+      - name: Destroy app (releases the load balancer first)
+        if: inputs.action == 'destroy'
+        run: |
+          aws eks update-kubeconfig --name devops-eks --region $AWS_REGION || true
+          kubectl delete namespace demo --ignore-not-found --timeout=300s || true
+
+      - name: Destroy cluster
+        if: inputs.action == 'destroy'
+        run: eksctl delete cluster -f infra/cluster.yaml --disable-nodegroup-eviction --wait

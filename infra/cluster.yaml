@@ -1,0 +1,28 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: devops-eks
+  region: ap-south-1
+  version: "1.34"   # use a version currently supported by EKS
+
+vpc:
+  nat:
+    gateway: Disable   # saves ~$0.045/hr; nodes use public subnets so they still reach the internet
+
+managedNodeGroups:
+  - name: ng-1
+    instanceType: t3.small
+    desiredCapacity: 1
+    minSize: 1
+    maxSize: 3
+    volumeSize: 20
+    iam:
+      attachPolicyARNs:
+        - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+        - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+        - arn:aws:iam::aws:policy/AmazonEBSCSIDriverPolicy   # lets EBS CSI create volumes for Postgres
+
+addons:
+  - name: aws-ebs-csi-driver

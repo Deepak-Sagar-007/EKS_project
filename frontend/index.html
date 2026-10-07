@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EKS Task App</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 520px; margin: 40px auto; padding: 0 16px; }
+    h1 { font-size: 1.4rem; }
+    form { display: flex; gap: 8px; margin-bottom: 16px; }
+    input { flex: 1; padding: 8px; }
+    button { padding: 8px 12px; cursor: pointer; }
+    li { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #ddd; }
+    #status { color: #888; font-size: .85rem; }
+  </style>
+</head>
+<body>
+  <h1>Task App on Amazon EKS</h1>
+  <p id="status">Frontend (nginx) &rarr; Backend (Node) &rarr; PostgreSQL</p>
+  <form id="f">
+    <input id="title" placeholder="New task..." required />
+    <button>Add</button>
+  </form>
+  <ul id="list"></ul>
+  <script>
+    const list = document.getElementById("list");
+    async function load() {
+      const res = await fetch("/api/tasks");
+      const tasks = await res.json();
+      list.innerHTML = "";
+      tasks.forEach(t => {
+        const li = document.createElement("li");
+        li.textContent = t.title;
+        const b = document.createElement("button");
+        b.textContent = "Delete";
+        b.onclick = async () => { await fetch("/api/tasks/" + t.id, { method: "DELETE" }); load(); };
+        li.appendChild(b);
+        list.appendChild(li);
+      });
+    }
+    document.getElementById("f").onsubmit = async (e) => {
+      e.preventDefault();
+      const input = document.getElementById("title");
+      await fetch("/api/tasks", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ title: input.value }) });
+      input.value = "";
+      load();
+    };
+    load();
+  </script>
+</body>
+</html>

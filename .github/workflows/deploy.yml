@@ -1,0 +1,80 @@
+name: 2 - Build and Deploy App
+
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**", "frontend/**", "k8s/**", ".github/workflows/deploy.yml"]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ap-south-1
+  CLUSTER_NAME: devops-eks
+  BACKEND_REPO: demo-backend
+  FRONTEND_REPO: demo-frontend
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Ensure ECR repositories exist
+        run: |
+          for repo in $BACKEND_REPO $FRONTEND_REPO; do
+            aws ecr describe-repositories --repository-names $repo >/dev/null 2>&1 || \
+            aws ecr create-repository --repository-name $repo >/dev/null
+          done
+
+      - name: Build and push images
+        run: |
+          REGISTRY=${{ steps.ecr.outputs.registry }}
+          TAG=${{ github.sha }}
+          docker build -t $REGISTRY/$BACKEND_REPO:$TAG ./backend
+          docker build -t $REGISTRY/$FRONTEND_REPO:$TAG ./frontend
+          docker push $REGISTRY/$BACKEND_REPO:$TAG
+          docker push $REGISTRY/$FRONTEND_REPO:$TAG
+          echo "BACKEND_IMAGE=$REGISTRY/$BACKEND_REPO:$TAG" >> $GITHUB_ENV
+          echo "FRONTEND_IMAGE=$REGISTRY/$FRONTEND_REPO:$TAG" >> $GITHUB_ENV
+
+      - name: Configure kubectl
+        run: aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_REGION
+
+      - name: Deploy namespace, storage, secret, database
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/storageclass.yaml
+          kubectl -n demo create secret generic db-secret \
+            --from-literal=DB_PASSWORD='${{ secrets.DB_PASSWORD }}' \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f k8s/postgres.yaml
+          kubectl -n demo rollout status statefulset/postgres --timeout=300s
+
+      - name: Deploy backend and frontend
+        run: |
+          sed -i "s|BACKEND_IMAGE|$BACKEND_IMAGE|" k8s/backend.yaml
+          sed -i "s|FRONTEND_IMAGE|$FRONTEND_IMAGE|" k8s/frontend.yaml
+          kubectl apply -f k8s/backend.yaml
+          kubectl -n demo rollout status deployment/backend --timeout=300s
+          kubectl apply -f k8s/frontend.yaml
+          kubectl -n demo rollout status deployment/frontend --timeout=300s
+
+      - name: Show app URL
+        run: |
+          for i in $(seq 1 30); do
+            HOST=$(kubectl -n demo get svc frontend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+            [ -n "$HOST" ] && break
+            sleep 10
+          done
+          echo "App URL: http://$HOST"
+          echo "### App URL: http://$HOST" >> $GITHUB_STEP_SUMMARY
+          kubectl -n demo get pods,svc
